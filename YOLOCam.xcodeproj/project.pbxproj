@@ -1,0 +1,246 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		000000000000000000003011 /* YOLOCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003010; };
+		000000000000000000003013 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003012; };
+		000000000000000000003015 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003014; };
+		000000000000000000003017 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003016; };
+		000000000000000000003019 /* CocoLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003018; };
+		00000000000000000000301B /* yolov8n.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000301A; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		000000000000000000003010 /* YOLOCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YOLOCamApp.swift; sourceTree = "<group>"; };
+		000000000000000000003012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		000000000000000000003014 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
+		000000000000000000003016 /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
+		000000000000000000003018 /* CocoLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CocoLabels.swift; sourceTree = "<group>"; };
+		00000000000000000000301A /* yolov8n.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper.mlpackage; path = yolov8n.mlpackage; sourceTree = "<group>"; };
+		00000000000000000000300F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		00000000000000000000300E /* YOLOCam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YOLOCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		00000000000000000000300A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		00000000000000000000300C = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000003010 /* YOLOCamApp.swift */,
+				000000000000000000003012 /* ContentView.swift */,
+				000000000000000000003014 /* CameraManager.swift */,
+				000000000000000000003016 /* Detector.swift */,
+				000000000000000000003018 /* CocoLabels.swift */,
+				00000000000000000000301A /* yolov8n.mlpackage */,
+				00000000000000000000300F /* Info.plist */,
+				00000000000000000000300D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		00000000000000000000300D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000000300E /* YOLOCam.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000003002 /* YOLOCam */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000003004 /* Build configuration list for PBXNativeTarget "YOLOCam" */;
+			buildPhases = (
+				000000000000000000003009 /* Sources */,
+				00000000000000000000300A /* Frameworks */,
+				00000000000000000000300B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = YOLOCam;
+			productName = YOLOCam;
+			productReference = 00000000000000000000300E /* YOLOCam.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000003001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					000000000000000000003002 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 000000000000000000003003 /* Build configuration list for PBXProject "YOLOCam" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 00000000000000000000300C;
+			productRefGroup = 00000000000000000000300D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				000000000000000000003002 /* YOLOCam */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		00000000000000000000300B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		000000000000000000003009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000003011 /* YOLOCamApp.swift in Sources */,
+				000000000000000000003013 /* ContentView.swift in Sources */,
+				000000000000000000003015 /* CameraManager.swift in Sources */,
+				000000000000000000003017 /* Detector.swift in Sources */,
+				000000000000000000003019 /* CocoLabels.swift in Sources */,
+				00000000000000000000301B /* yolov8n.mlpackage in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		000000000000000000003005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		000000000000000000003006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_OPTIMIZATION_LEVEL = s;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		000000000000000000003007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhy8416503.yolocam;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		000000000000000000003008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhy8416503.yolocam;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_OPTIMIZATION_LEVEL = s;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		000000000000000000003003 /* Build configuration list for PBXProject "YOLOCam" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000003005 /* Debug */,
+				000000000000000000003006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000003004 /* Build configuration list for PBXNativeTarget "YOLOCam" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000003007 /* Debug */,
+				000000000000000000003008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 000000000000000000003001 /* Project object */;
+}
