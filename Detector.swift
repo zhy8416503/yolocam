@@ -83,6 +83,8 @@ final class Detector {
                 return Float(ptr.load(fromByteOffset: idx * 4, as: Float.self))
             case .double:
                 return Float(ptr.load(fromByteOffset: idx * 8, as: Double.self))
+            case .int32:
+                return Float(ptr.load(fromByteOffset: idx * 4, as: Int32.self))
             @unknown default:
                 return 0
             }
@@ -111,7 +113,7 @@ final class Detector {
         for i in 0..<candidates.count {
             guard keep[i] else { continue }
             let a = candidates[i]
-            boxes.append((a.x, a.y, a.w, a.h, CocoLabels.names[a.cls], a.score))
+            boxes.append((a.x, a.y, a.w, a.h, cocoLabels[a.cls], a.score))
             if boxes.count >= 50 { break }
             for j in (i + 1)..<candidates.count where keep[j] {
                 let b = candidates[j]
