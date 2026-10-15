@@ -1,0 +1,55 @@
+name: Build IPA
+
+# 手动触发: Actions 页面点 "Run workflow"
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 解压 Core ML 模型
+        run: unzip -q yolov8n.mlpackage.zip && ls -d yolov8n.mlpackage
+
+      - name: Xcode 构建 (不签名)
+        run: |
+          xcodebuild -project YOLOCam.xcodeproj \
+            -scheme YOLOCam \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打包成 IPA (未签名)
+        run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          echo "APP: $APP_PATH"
+          test -n "$APP_PATH" || (echo "找不到 .app" && exit 1)
+          rm -rf Payload YOLOCam-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr YOLOCam-unsigned.ipa Payload
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: YOLOCam-unsigned-ipa
+          path: YOLOCam-unsigned.ipa
+          if-no-files-found: error
+
+      - name: 发布 GitHub Release（公开下载链接）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" YOLOCam-unsigned.ipa \
+            --title "YOLOCam $TAG" \
+            --notes "未签名 IPA，需自行签名/侧载安装。YOLOv8n 实时物体检测（Core ML，完全离线）。"
