@@ -2,96 +2,100 @@ import AVFoundation
 import QuartzCore
 import UIKit
 
-/// Owns the AVCaptureSession and runs YOLOv8 inference on incoming frames
-/// (one inference at a time on a background queue; late frames are dropped).
+/// 相机 + 实时检测。App 锁定竖屏, 只处理后置相机。
 final class CameraManager: NSObject, ObservableObject {
     @Published var detections: [Detection] = []
-    @Published var inferFPS: Double = 0
-    @Published var status: String = "正在启动…"
+    @Published var fps: Double = 0
+    @Published var orientedAspect: CGFloat = 9.0 / 16.0  // 扶正后图像宽高比
+    @Published var status: String = "启动中…"
 
-    let session = AVCaptureSession()
-
+    private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "camera.session")
+    private let output = AVCaptureVideoDataOutput()
     private var detector: Detector?
-    private let sessionQueue = DispatchQueue(label: "yolocam.session")
-    private let inferQueue = DispatchQueue(label: "yolocam.infer")
-    private var inferring = false
+    private weak var previewLayer: AVCaptureVideoPreviewLayer?
 
-    override init() {
+    // 推理门控: 同一时间只跑一帧推理, 跑不完的新帧直接丢掉 (sessionQueue 上串行访问)
+    private var detecting = false
+    private var lastStatTime = CACurrentMediaTime()
+    private var statCount = 0
+
+    init(previewLayer: AVCaptureVideoPreviewLayer) {
+        self.previewLayer = previewLayer
         super.init()
         do {
-            detector = try Detector()
+            self.detector = try Detector()
         } catch {
-            status = "模型加载失败：\(error.localizedDescription)"
+            DispatchQueue.main.async { self.status = "模型加载失败" }
         }
+        output.setSampleBufferDelegate(self, queue: sessionQueue)
     }
 
     func start() {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            setupSession()
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                if granted {
-                    self.setupSession()
-                } else {
-                    DispatchQueue.main.async {
-                        self.status = "请在系统设置中允许 YOLOCam 访问相机"
-                    }
-                }
-            }
-        default:
-            status = "请在系统设置中允许 YOLOCam 访问相机"
-        }
-    }
-
-    private func setupSession() {
-        sessionQueue.async {
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
             self.session.beginConfiguration()
-            self.session.sessionPreset = .hd1280x720
-            guard
-                let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-                let input = try? AVCaptureDeviceInput(device: device),
-                self.session.canAddInput(input)
-            else {
-                DispatchQueue.main.async { self.status = "找不到可用相机" }
+            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                  let input = try? AVCaptureDeviceInput(device: device),
+                  self.session.canAddInput(input) else {
+                DispatchQueue.main.async { self.status = "找不到后置相机" }
                 return
             }
             self.session.addInput(input)
-            let output = AVCaptureVideoDataOutput()
-            output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-            output.alwaysDiscardsLateVideoFrames = true
-            output.setSampleBufferDelegate(self, queue: self.sessionQueue)
-            guard self.session.canAddOutput(output) else {
+            self.output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            // 实时场景: 消费不过来的旧帧直接丢, 不积压
+            self.output.alwaysDiscardsLateVideoFrames = true
+            guard self.session.canAddOutput(self.output) else {
                 DispatchQueue.main.async { self.status = "相机输出配置失败" }
                 return
             }
-            self.session.addOutput(output)
+            self.session.addOutput(self.output)
             self.session.commitConfiguration()
+
+            // 预览层: 竖屏显示 + 填满 (主线程配置, session 已挂上, connection 一定存在)
+            DispatchQueue.main.async {
+                self.previewLayer?.session = self.session
+                self.previewLayer?.videoGravity = .resizeAspectFill
+                if let c = self.previewLayer?.connection, c.isVideoOrientationSupported {
+                    c.videoOrientation = .portrait
+                }
+            }
             self.session.startRunning()
-            DispatchQueue.main.async { self.status = "" }
+            DispatchQueue.main.async { self.status = "检测中" }
         }
+    }
+
+    func stop() {
+        sessionQueue.async { [weak self] in self?.session.stopRunning() }
     }
 }
 
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
-                       from connection: AVCaptureConnection)
-    {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
-              let detector = detector,
-              !inferring
-        else { return }
-        inferring = true
-        inferQueue.async {
-            let t0 = CACurrentMediaTime()
-            let dets = detector.detect(pixelBuffer: pixelBuffer)
-            let dt = CACurrentMediaTime() - t0
-            DispatchQueue.main.async {
-                self.detections = dets
-                self.inferFPS = 1.0 / max(dt, 0.001)
-                self.inferring = false
-            }
+                       from connection: AVCaptureConnection) {
+        guard let detector = detector,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard !detecting else { return }   // 上一帧推理还没完, 丢掉这一帧
+        detecting = true
+        defer { detecting = false }
+
+        let dets = (try? detector.detect(pixelBuffer: pixelBuffer)) ?? []
+        let aspect = detector.orientedAspect
+
+        statCount += 1
+        let now = CACurrentMediaTime()
+        let dt = now - lastStatTime
+        var currentFps: Double?
+        if dt >= 1.0 {
+            currentFps = Double(statCount) / dt
+            statCount = 0
+            lastStatTime = now
+        }
+        DispatchQueue.main.async {
+            self.detections = dets
+            if let f = currentFps { self.fps = f }
+            if abs(self.orientedAspect - aspect) > 0.0005 { self.orientedAspect = aspect }
         }
     }
 }

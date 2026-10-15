@@ -1,13 +1,12 @@
 import CoreML
+import Vision
 import CoreVideo
 import Foundation
-import Vision
 
-/// A single object detection. `rect` is normalized (0...1) in the full
-/// camera-frame space, origin top-left. The model input is the whole frame
-/// stretched to 640x640 (Vision `.scaleFill`), so model space == frame space.
-struct Detection {
-    let rect: CGRect
+struct Detection: Identifiable {
+    let id = UUID()
+    // 归一化坐标 (0~1), 以 Vision 扶正后的图像为基准, 原点左上
+    let x, y, width, height: CGFloat
     let label: String
     let confidence: Float
 }
@@ -16,126 +15,133 @@ enum DetectorError: Error {
     case modelNotFound
 }
 
-/// YOLOv8n Core ML wrapper: Vision handles pixel-format conversion and
-/// scaling, we decode the raw [84, 8400] output tensor and run NMS by hand.
 final class Detector {
-    private let vnModel: VNCoreMLModel
-    private let scoreThreshold: Float = 0.25
-    private let iouThreshold: CGFloat = 0.45
+    private let request: VNCoreMLRequest
+    // 扶正后图像的宽高比 (Wo/Ho), 由最近一帧的 pixelBuffer 尺寸决定
+    var orientedAspect: CGFloat = 9.0 / 16.0
 
     init() throws {
         let bundle = Bundle.main
-        // Xcode compiles yolov8n.mlpackage into yolov8n.mlmodelc inside the bundle.
+        // 1. Xcode 把 yolov8n.mlpackage 编译成 yolov8n.mlmodelc 放进包里
         var modelURL = bundle.url(forResource: "yolov8n", withExtension: "mlmodelc")
+        // 2. 兜底: 包里任意一个编译好的模型
         if modelURL == nil,
            let urls = try? FileManager.default.contentsOfDirectory(
                at: bundle.bundleURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
         {
             modelURL = urls.first(where: { $0.pathExtension == "mlmodelc" })
         }
-        // Fallback: raw .mlpackage, in case Xcode copied it as a resource instead.
+        // 3. 兜底: 原始 mlpackage (Xcode 没编译而是当资源拷贝的极端情况)
         if modelURL == nil {
             modelURL = bundle.url(forResource: "yolov8n", withExtension: "mlpackage")
         }
         guard let url = modelURL else { throw DetectorError.modelNotFound }
-        var config = MLModelConfiguration()
-        config.computeUnits = .all // ANE + GPU + CPU
-        let model = try MLModel(contentsOf: url, configuration: config)
-        vnModel = try VNCoreMLModel(for: model)
+
+        let config = MLModelConfiguration()
+        config.computeUnits = .all   // ANE / GPU / CPU 自动选最快的
+        let mlModel = try MLModel(contentsOf: url, configuration: config)
+        let vnModel = try VNCoreMLModel(for: mlModel)
+
+        let req = VNCoreMLRequest(model: vnModel)
+        // 模型输入是 640x640, 用填满方式居中裁剪
+        req.imageCropAndScaleOption = .scaleFill
+        self.request = req
     }
 
-    func detect(pixelBuffer: CVPixelBuffer) -> [Detection] {
-        var detections: [Detection] = []
-        let request = VNCoreMLRequest(model: vnModel) { req, _ in
-            guard let results = req.results as? [VNCoreMLFeatureValueObservation],
-                  let ma = results.first?.featureValue.multiArrayValue
-            else { return }
-            detections = self.decode(ma)
-        }
-        request.imageCropAndScaleOption = .scaleFill
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-        try? handler.perform([request])
-        return detections
+    /// 对一帧做检测。pixelBuffer 是相机原始 buffer (sensor 横屏尺寸)。
+    /// 返回的框是"扶正后竖屏图像"的归一化坐标, 调用方按 aspect-fill 映射到屏幕。
+    /// App 锁定竖屏 + 后置相机, 因此 Vision orientation 用 .right。
+    func detect(pixelBuffer: CVPixelBuffer) throws -> [Detection] {
+        // 后置相机 + 竖屏: buffer 是横的, 扶正需要顺时针转 90° (.right)
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        try handler.perform([request])
+
+        guard let results = request.results as? [VNCoreMLFeatureValueObservation],
+              let out = results.first?.featureValue.multiArrayValue else { return [] }
+        return decode(out, pixelBuffer: pixelBuffer)
     }
 
-    // MARK: - YOLOv8 output decoding ([cx, cy, w, h, 80 class scores] x 8400)
+    // YOLOv8 输出 [1,84,8400]: 84 = 4 个坐标 + 80 类分数 (无 NMS, 自己做)
+    private func decode(_ ma: MLMultiArray, pixelBuffer: CVPixelBuffer) -> [Detection] {
+        let shape = ma.shape.map { $0.intValue }   // [1,84,8400]
+        guard shape.count == 3 else { return [] }
+        let rows = shape[1], cols = shape[2]
+        guard rows >= 84, cols > 0 else { return [] }
 
-    private func decode(_ ma: MLMultiArray) -> [Detection] {
-        let shape = ma.shape.map { $0.intValue }
-        let strides = ma.strides.map { $0.intValue }
-        guard let chDim = shape.firstIndex(of: 84),
-              let anDim = shape.firstIndex(of: 8400),
-              shape.count == strides.count
-        else { return [] }
-        let anchors = 8400
+        let strides = ma.strides.map { $0.intValue }  // [s0,s1,s2]
+        let s1 = strides[1], s2 = strides[2]
         let ptr = ma.dataPointer
 
-        func value(channel c: Int, anchor a: Int) -> Float {
-            var idx = [Int](repeating: 0, count: shape.count)
-            idx[chDim] = c
-            idx[anDim] = a
-            var lin = 0
-            for d in 0..<shape.count { lin += idx[d] * strides[d] }
+        @inline(__always)
+        func val(_ r: Int, _ c: Int) -> Float {
+            let idx = r * s1 + c * s2
             switch ma.dataType {
             case .float16:
-                return Float(Float16(bitPattern: ptr.assumingMemoryBound(to: UInt16.self)[lin]))
+                let bits = ptr.load(fromByteOffset: idx * 2, as: UInt16.self)
+                return Float(Float16(bitPattern: bits))
             case .float32:
-                return ptr.assumingMemoryBound(to: Float.self)[lin]
+                return Float(ptr.load(fromByteOffset: idx * 4, as: Float.self))
             case .double:
-                return Float(ptr.assumingMemoryBound(to: Double.self)[lin])
+                return Float(ptr.load(fromByteOffset: idx * 8, as: Double.self))
             @unknown default:
                 return 0
             }
         }
 
-        var dets: [Detection] = []
-        dets.reserveCapacity(64)
-        for a in 0..<anchors {
-            let cx = value(channel: 0, anchor: a)
-            let cy = value(channel: 1, anchor: a)
-            let w = value(channel: 2, anchor: a)
-            let h = value(channel: 3, anchor: a)
-            var bestClass = -1
-            var bestScore = scoreThreshold
-            for c in 0..<80 {
-                let s = value(channel: 4 + c, anchor: a)
-                if s > bestScore {
-                    bestScore = s
-                    bestClass = c
-                }
+        // 找每列最高分类分数 (阈值 0.25)
+        var candidates: [(x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, score: Float, cls: Int)] = []
+        candidates.reserveCapacity(256)
+        for c in 0..<cols {
+            var bestScore: Float = 0
+            var bestCls = 0
+            for k in 0..<80 {
+                let sc = val(4 + k, c)
+                if sc > bestScore { bestScore = sc; bestCls = k }
             }
-            if bestClass >= 0 {
-                let rect = CGRect(
-                    x: CGFloat((cx - w / 2) / 640),
-                    y: CGFloat((cy - h / 2) / 640),
-                    width: CGFloat(w / 640),
-                    height: CGFloat(h / 640))
-                dets.append(Detection(rect: rect, label: cocoLabels[bestClass], confidence: bestScore))
+            guard bestScore >= 0.25 else { continue }
+            let cx = CGFloat(val(0, c)), cy = CGFloat(val(1, c))
+            let w = CGFloat(val(2, c)), h = CGFloat(val(3, c))
+            candidates.append((cx - w / 2, cy - h / 2, w, h, bestScore, bestCls))
+        }
+
+        // NMS (IoU 0.45), 按分数降序
+        candidates.sort { $0.score > $1.score }
+        var keep: [Bool] = Array(repeating: true, count: candidates.count)
+        var boxes: [(x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, label: String, confidence: Float)] = []
+        for i in 0..<candidates.count {
+            guard keep[i] else { continue }
+            let a = candidates[i]
+            boxes.append((a.x, a.y, a.w, a.h, CocoLabels.names[a.cls], a.score))
+            if boxes.count >= 50 { break }
+            for j in (i + 1)..<candidates.count where keep[j] {
+                let b = candidates[j]
+                let ix = max(0, min(a.x + a.w, b.x + b.w) - max(a.x, b.x))
+                let iy = max(0, min(a.y + a.h, b.y + b.h) - max(a.y, b.y))
+                let inter = ix * iy
+                if inter <= 0 { continue }
+                let union = a.w * a.h + b.w * b.h - inter
+                if union > 0 && inter / union > 0.45 { keep[j] = false }
             }
         }
-        return nms(dets)
-    }
 
-    private func nms(_ dets: [Detection]) -> [Detection] {
-        var kept: [Detection] = []
-        let groups = Dictionary(grouping: dets, by: { $0.label })
-        for (_, var cls) in groups {
-            cls.sort { $0.confidence > $1.confidence }
-            while let best = cls.first {
-                cls.removeFirst()
-                kept.append(best)
-                cls.removeAll { self.iou($0.rect, best.rect) >= self.iouThreshold }
-            }
+        // ---- 640 模型坐标 -> 扶正后图像的归一化坐标 ----
+        // Vision 以 .scaleFill 把扶正后的图像居中裁剪为 640x640, 这里做逆变换
+        let Wb = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let Hb = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        let Wo = Hb, Ho = Wb            // orientation .right: 宽高互换
+        orientedAspect = Wo / Ho
+        let s = max(640 / Wo, 640 / Ho)
+        let cropX = (Wo * s - 640) / 2
+        let cropY = (Ho * s - 640) / 2
+        return boxes.map { b in
+            Detection(
+                x: ((b.x + cropX) / s) / Wo,
+                y: ((b.y + cropY) / s) / Ho,
+                width: (b.w / s) / Wo,
+                height: (b.h / s) / Ho,
+                label: b.label,
+                confidence: b.confidence
+            )
         }
-        return kept.sorted { $0.confidence > $1.confidence }
-    }
-
-    private func iou(_ a: CGRect, _ b: CGRect) -> CGFloat {
-        let inter = a.intersection(b)
-        guard !inter.isNull, inter.width > 0, inter.height > 0 else { return 0 }
-        let interArea = inter.width * inter.height
-        let unionArea = a.width * a.height + b.width * b.height - interArea
-        guard unionArea > 0 else { return 0 }
-        return interArea / unionArea
     }
 }
