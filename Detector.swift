@@ -1,6 +1,7 @@
 import CoreML
 import Vision
 import CoreVideo
+import CoreImage
 import Foundation
 
 struct Detection: Identifiable {
@@ -17,6 +18,8 @@ enum DetectorError: Error {
 
 final class Detector {
     private let request: VNCoreMLRequest
+    private let ciContext = CIContext()
+    private var letterboxBuffer: CVPixelBuffer?
     // 扶正后图像的宽高比 (Wo/Ho), 由最近一帧的 pixelBuffer 尺寸决定
     var orientedAspect: CGFloat = 9.0 / 16.0
 
@@ -43,26 +46,68 @@ final class Detector {
         let vnModel = try VNCoreMLModel(for: mlModel)
 
         let req = VNCoreMLRequest(model: vnModel)
-        // 模型输入是 640x640, 用填满方式居中裁剪
-        req.imageCropAndScaleOption = .scaleFill
+        // 输入已经是手动 letterbox 好的 640x640, 这里不再裁剪
+        req.imageCropAndScaleOption = .scaleFit
         self.request = req
     }
 
     /// 对一帧做检测。pixelBuffer 是相机原始 buffer (sensor 横屏尺寸)。
+    /// 先扶正 + letterbox 成 640x640 (YOLO 训练时的预处理, 全画面无裁剪),
     /// 返回的框是"扶正后竖屏图像"的归一化坐标, 调用方按 aspect-fill 映射到屏幕。
-    /// App 锁定竖屏 + 后置相机, 因此 Vision orientation 用 .right。
     func detect(pixelBuffer: CVPixelBuffer) throws -> [Detection] {
-        // 后置相机 + 竖屏: buffer 是横的, 扶正需要顺时针转 90° (.right)
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .right, options: [:])
+        guard let (lb, Wo, Ho) = letterbox(pixelBuffer) else { return [] }
+        // letterbox 后的 buffer 已经是正的 640x640
+        let handler = VNImageRequestHandler(cvPixelBuffer: lb, orientation: .up, options: [:])
         try handler.perform([request])
 
         guard let results = request.results as? [VNCoreMLFeatureValueObservation],
               let out = results.first?.featureValue.multiArrayValue else { return [] }
-        return decode(out, pixelBuffer: pixelBuffer)
+        return decode(out, Wo: Wo, Ho: Ho)
+    }
+
+    /// 扶正 (顺时针 90°) + letterbox (等比 fit + 灰边) 到 640x640。
+    /// 返回 (letterbox 后的 buffer, 扶正后图像宽, 扶正后图像高)。
+    /// buffer 复用, 只在 sessionQueue 上使用。
+    private func letterbox(_ pixelBuffer: CVPixelBuffer) -> (CVPixelBuffer, CGFloat, CGFloat)? {
+        if letterboxBuffer == nil {
+            letterboxBuffer = makeBuffer()
+        }
+        guard let dest = letterboxBuffer else { return nil }
+
+        // 后置相机 + 竖屏: buffer 是横的, 扶正需要顺时针转 90° (.right, 即 EXIF 6)
+        let upright = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        let Wo = upright.extent.width
+        let Ho = upright.extent.height
+        guard Wo > 0, Ho > 0 else { return nil }
+        orientedAspect = Wo / Ho
+
+        // letterbox: 等比缩放到 fit, 居中, 灰边填充 (114, YOLO 训练预处理)
+        let s = min(640 / Wo, 640 / Ho)
+        let dx = (640 - Wo * s) / 2
+        let dy = (640 - Ho * s) / 2
+        let placed = upright
+            .transformed(by: CGAffineTransform(scaleX: s, y: s))
+            .transformed(by: CGAffineTransform(translationX: dx, y: dy))
+        let gray = CIImage(color: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255, alpha: 1))
+            .cropped(to: CGRect(x: 0, y: 0, width: 640, height: 640))
+        ciContext.render(placed.composited(over: gray), to: dest)
+        return (dest, Wo, Ho)
+    }
+
+    private func makeBuffer() -> CVPixelBuffer? {
+        var pb: CVPixelBuffer?
+        let attrs: [String: Any] = [
+            kCVPixelBufferCGImageCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+        ]
+        guard CVPixelBufferCreate(kCFAllocatorDefault, 640, 640,
+                                  kCVPixelFormatType_32BGRA,
+                                  attrs as CFDictionary, &pb) == kCVReturnSuccess else { return nil }
+        return pb
     }
 
     // YOLOv8 输出 [1,84,8400]: 84 = 4 个坐标 + 80 类分数 (无 NMS, 自己做)
-    private func decode(_ ma: MLMultiArray, pixelBuffer: CVPixelBuffer) -> [Detection] {
+    private func decode(_ ma: MLMultiArray, Wo: CGFloat, Ho: CGFloat) -> [Detection] {
         let shape = ma.shape.map { $0.intValue }   // [1,84,8400]
         guard shape.count == 3 else { return [] }
         let rows = shape[1], cols = shape[2]
@@ -126,21 +171,16 @@ final class Detector {
             }
         }
 
-        // ---- 640 模型坐标 -> 扶正后图像的归一化坐标 ----
-        // Vision 以 .scaleFill 把扶正后的图像居中裁剪为 640x640, 这里做逆变换
-        let Wb = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
-        let Hb = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
-        let Wo = Hb, Ho = Wb            // orientation .right: 宽高互换
-        orientedAspect = Wo / Ho
-        let s = max(640 / Wo, 640 / Ho)
-        let cropX = (Wo * s - 640) / 2
-        let cropY = (Ho * s - 640) / 2
+        // ---- 640 模型坐标 -> 扶正后图像的归一化坐标 (letterbox 逆变换) ----
+        let lb = min(640 / Wo, 640 / Ho)
+        let offX = (640 - Wo * lb) / 2
+        let offY = (640 - Ho * lb) / 2
         return boxes.map { b in
             Detection(
-                x: ((b.x + cropX) / s) / Wo,
-                y: ((b.y + cropY) / s) / Ho,
-                width: (b.w / s) / Wo,
-                height: (b.h / s) / Ho,
+                x: ((b.x - offX) / lb) / Wo,
+                y: ((b.y - offY) / lb) / Ho,
+                width: (b.w / lb) / Wo,
+                height: (b.h / lb) / Ho,
                 label: b.label,
                 confidence: b.confidence
             )
