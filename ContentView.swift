@@ -3,11 +3,10 @@ import AVFoundation
 
 /// 预览 UIView (AVCaptureVideoPreviewLayer 做底)
 final class PreviewUIView: UIView {
-    let previewLayer: AVCaptureVideoPreviewLayer
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+    var previewLayer: AVCaptureVideoPreviewLayer { self.layer as! AVCaptureVideoPreviewLayer }
     override init(frame: CGRect) {
         super.init(frame: frame)
-        self.previewLayer = self.layer as! AVCaptureVideoPreviewLayer
         previewLayer.videoGravity = .resizeAspectFill
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
