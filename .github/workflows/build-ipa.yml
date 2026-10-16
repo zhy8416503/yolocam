@@ -21,7 +21,7 @@ jobs:
 
       - name: 转换模型 (YOLO26n/x -> CoreML)
         run: |
-          pip install ultralytics coremltools
+          pip install ultralytics "coremltools==8.1"
           python3 << 'PYEOF'
           from ultralytics import YOLO
           for name in ['yolo26n', 'yolo26x']:
