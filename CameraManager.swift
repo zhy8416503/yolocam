@@ -72,7 +72,7 @@ final class CameraManager: NSObject, ObservableObject {
             let lenses = self.discoverLenses()
             DispatchQueue.main.async { self.availableLenses = lenses }
 
-            guard self.applyLens(.wide, quality: .k4_30) else {
+            guard self.applyLens(.wide, quality: .k4_30) != nil else {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async { self.status = "找不到相机" }
                 return
