@@ -13,7 +13,6 @@
 		000000000000000000003017 /* Detector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003016; };
 		000000000000000000003019 /* CocoLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000003018; };
 		00000000000000000000301B /* yolo26n.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000301A; };
-		00000000000000000000301C /* yolo26x.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000301D; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,7 +22,6 @@
 		000000000000000000003016 /* Detector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Detector.swift; sourceTree = "<group>"; };
 		000000000000000000003018 /* CocoLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CocoLabels.swift; sourceTree = "<group>"; };
 		00000000000000000000301A /* yolo26n.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper.mlpackage; path = yolo26n.mlpackage; sourceTree = "<group>"; };
-		00000000000000000000301D /* yolo26x.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = wrapper.mlpackage; path = yolo26x.mlpackage; sourceTree = "<group>"; };
 		00000000000000000000300F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		00000000000000000000300E /* YOLOCam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YOLOCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -48,7 +46,6 @@
 				000000000000000000003016 /* Detector.swift */,
 				000000000000000000003018 /* CocoLabels.swift */,
 				00000000000000000000301A /* yolo26n.mlpackage */,
-				00000000000000000000301D /* yolo26x.mlpackage */,
 				00000000000000000000300F /* Info.plist */,
 				00000000000000000000300D /* Products */,
 			);
@@ -134,7 +131,6 @@
 				000000000000000000003017 /* Detector.swift in Sources */,
 				000000000000000000003019 /* CocoLabels.swift in Sources */,
 				00000000000000000000301B /* yolo26n.mlpackage in Sources */,
-				00000000000000000000301C /* yolo26x.mlpackage in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
