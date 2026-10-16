@@ -178,6 +178,15 @@ struct ContentView: View {
                 PreviewViewWrapper(preview: preview)
                     .frame(width: geo.size.width, height: geo.size.height)
 
+                // v9 版本标识 (右上角, 用于确认真机安装版本)
+                Text("v9")
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .padding(4)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(4)
+                    .position(x: geo.size.width - 24, y: 24)
+
                 // 天线: 仅对人物, 从屏幕顶部中心连到框顶边中点
                 if camera.antennaEnabled {
                     ForEach(camera.detections.indices, id: \.self) { i in

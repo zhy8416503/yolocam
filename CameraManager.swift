@@ -75,7 +75,8 @@ final class CameraManager: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: sessionQueue)
     }
 
-    /// 启动: 与 v3 完全一致的极简流程, 只多加一个 movieOutput。
+    /// 启动: 与 v3 完全一致的极简流程。
+    /// v9: 移除 movieOutput、镜头探测、分辨率探测, 彻底回到 v3。
     func start() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
@@ -98,17 +99,11 @@ final class CameraManager: NSObject, ObservableObject {
             if self.session.canAddOutput(self.videoOutput) {
                 self.session.addOutput(self.videoOutput)
             }
-            if self.session.canAddOutput(self.movieOutput) {
-                self.session.addOutput(self.movieOutput)
-            }
             self.session.commitConfiguration()
 
-            let lenses = self.discoverLenses()
             DispatchQueue.main.async {
                 self.previewLayer?.session = self.session
                 self.configurePreviewConnection()
-                self.availableLenses = lenses
-                self.availableResolutions = self.probeResolutions(for: device)
                 self.status = "检测中"
             }
             self.session.startRunning()
@@ -388,6 +383,14 @@ final class CameraManager: NSObject, ObservableObject {
             if self.movieOutput.isRecording {
                 self.movieOutput.stopRecording()
                 return
+            }
+            // v9: movieOutput 懒加载, 启动时不加入 session
+            if !self.session.outputs.contains(self.movieOutput) {
+                self.session.beginConfiguration()
+                if self.session.canAddOutput(self.movieOutput) {
+                    self.session.addOutput(self.movieOutput)
+                }
+                self.session.commitConfiguration()
             }
             self.ensureAudio {
                 let url = FileManager.default.temporaryDirectory
