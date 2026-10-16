@@ -14,8 +14,26 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 解压 Core ML 模型
-        run: unzip -q yolov8n.mlpackage.zip && ls -d yolov8n.mlpackage
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 转换模型 (YOLO26n/x -> CoreML)
+        run: |
+          pip install ultralytics coremltools
+          python3 << 'EOF'
+          from ultralytics import YOLO
+          import os
+          for name in ['yolo26n', 'yolo26x']:
+              print(f'导出 {name}...')
+              model = YOLO(f'{name}.pt')  # 自动下载
+              out = model.export(format='coreml', imgsz=640)
+              print(f'{name} -> {out}')
+              # out 是 yolo26n.mlpackage 目录, 已在当前目录
+          print('模型转换完成')
+          ls -d *.mlpackage
+          EOF
 
       - name: Xcode 构建 (不签名)
         run: |
@@ -51,5 +69,5 @@ jobs:
         run: |
           TAG="v1.0.${{ github.run_number }}"
           gh release create "$TAG" YOLOCam-unsigned.ipa \
-            --title "YOLOCam $TAG" \
-            --notes "未签名 IPA，需自行签名/侧载安装。YOLOv8n 实时物体检测（Core ML，完全离线）。"
+            --title "YOLOCam YOLO26 $TAG" \
+            --notes "未签名 IPA，需自行签名/侧载安装。YOLO26 双模型（N=常规精度, X=超高精度）实时物体检测，完全离线。"
