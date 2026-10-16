@@ -3,13 +3,12 @@ import QuartzCore
 import UIKit
 
 /// 相机 + 实时检测。App 锁定竖屏, 只处理后置相机。
-/// 支持 YOLO26 双模型切换 (N=常规精度, X=超高精度)。
+/// 单模型: YOLO26-N (常规精度)。
 final class CameraManager: NSObject, ObservableObject {
     @Published var detections: [Detection] = []
     @Published var fps: Double = 0
     @Published var orientedAspect: CGFloat = 9.0 / 16.0  // 扶正后图像宽高比
     @Published var status: String = "启动中…"
-    @Published var modelVariant: ModelVariant = .n
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "camera.session")
@@ -33,32 +32,50 @@ final class CameraManager: NSObject, ObservableObject {
         output.setSampleBufferDelegate(self, queue: sessionQueue)
     }
 
-    /// 切换模型 (后台线程重建 Detector)
-    func switchModel(_ variant: ModelVariant) {
-        sessionQueue.async { [weak self] in
-            guard let self = self else { return }
-            do {
-                let newDetector = try Detector(variant: variant)
-                self.detector = newDetector
-                DispatchQueue.main.async {
-                    self.modelVariant = variant
-                    self.status = "已切换: \(variant.displayName)"
-                }
-            } catch {
-                DispatchQueue.main.async { self.status = "模型切换失败" }
-            }
-        }
-    }
-
     func start() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
             self.session.beginConfiguration()
+            // 默认 1080p 60fps (拍照视角预览)
+            if self.session.canSetSessionPreset(.hd1920x1080) {
+                self.session.sessionPreset = .hd1920x1080
+            }
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
                   let input = try? AVCaptureDeviceInput(device: device),
                   self.session.canAddInput(input) else {
                 DispatchQueue.main.async { self.status = "找不到后置相机" }
                 return
+            }
+            // 尝试 60fps (失败则保持默认)
+            do {
+                try device.lockForConfiguration()
+                let targetFps = 60.0
+                var bestFormat: AVCaptureDevice.Format?
+                var bestRange: AVFrameRateRange?
+                for format in device.formats {
+                    let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                    if dims.width == 1920 && dims.height == 1080 {
+                        for range in format.videoSupportedFrameRateRanges {
+                            if range.maxFrameRate >= targetFps {
+                                bestFormat = format
+                                bestRange = range
+                                break
+                            }
+                        }
+                        if bestFormat != nil { break }
+                    }
+                }
+                if let format = bestFormat, let range = bestRange {
+                    device.activeFormat = format
+                    let duration = CMTime(value: 1, timescale: 60)
+                    if range.minFrameDuration.timescale != 0 {
+                        device.activeVideoMinFrameDuration = duration
+                        device.activeVideoMaxFrameDuration = duration
+                    }
+                }
+                device.unlockForConfiguration()
+            } catch {
+                // 保持默认帧率
             }
             self.session.addInput(input)
             self.output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
