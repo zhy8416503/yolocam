@@ -57,28 +57,17 @@ struct ContentView: View {
                     .position(x: r.midX, y: r.midY)
                 }
 
-                // 顶部: 模型切换 (无二级菜单, 直接放最顶上)
+                // 顶部: 单模型 (YOLO26-N 常规精度), 无切换
                 // iPhone 12 Pro Max (2778x1284) 适配: 避开刘海
                 VStack {
-                    HStack(spacing: 16) {
-                        Button(action: { camera.switchModel(.n) }) {
-                            Text("常规精度")
-                                .font(.subheadline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(camera.modelVariant == .n ? Color.blue : Color.gray.opacity(0.6))
-                                .foregroundColor(.white)
-                                .cornerRadius(20)
-                        }
-                        Button(action: { camera.switchModel(.x) }) {
-                            Text("超高精度")
-                                .font(.subheadline)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(camera.modelVariant == .x ? Color.blue : Color.gray.opacity(0.6))
-                                .foregroundColor(.white)
-                                .cornerRadius(20)
-                        }
+                    HStack {
+                        Text("YOLO26-N · 常规精度")
+                            .font(.subheadline)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(20)
                     }
                     .padding(.top, 54)  // 避开刘海/状态栏
 

@@ -12,15 +12,9 @@ struct Detection: Identifiable {
     let confidence: Float
 }
 
-enum ModelVariant: String, CaseIterable {
-    case n = "yolo26n"  // 常规精度
-    case x = "yolo26x"  // 超高精度
-    var displayName: String {
-        switch self {
-        case .n: return "常规精度"
-        case .x: return "超高精度"
-        }
-    }
+enum ModelVariant: String {
+    case n = "yolo26n"  // 常规精度 (唯一模型)
+    var displayName: String { return "常规精度" }
 }
 
 enum DetectorError: Error {
