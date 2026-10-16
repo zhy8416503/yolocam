@@ -26,11 +26,10 @@ jobs:
           pip install "coremltools==8.1"  # 降级 (ultralytics 会升到9.0, 需覆盖)
           python3 << 'PYEOF'
           from ultralytics import YOLO
-          for name in ['yolo26n', 'yolo26x']:
-              print(f'导出 {name}...')
-              model = YOLO(f'{name}.pt')
-              out = model.export(format='coreml', imgsz=640)
-              print(f'{name} -> {out}')
+          print('导出 yolo26n...')
+          model = YOLO('yolo26n.pt')
+          out = model.export(format='coreml', imgsz=640)
+          print(f'yolo26n -> {out}')
           print('模型转换完成')
           PYEOF
           ls -d *.mlpackage
