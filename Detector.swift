@@ -22,6 +22,8 @@ final class Detector {
     private var letterboxBuffer: CVPixelBuffer?
     // 扶正后图像的宽高比 (Wo/Ho), 由最近一帧的 pixelBuffer 尺寸决定
     var orientedAspect: CGFloat = 9.0 / 16.0
+    /// 前置相机时为 true (扶正方向不同, 不做镜像)
+    var isFrontCamera = false
 
     init() throws {
         let bundle = Bundle.main
@@ -74,8 +76,10 @@ final class Detector {
         }
         guard let dest = letterboxBuffer else { return nil }
 
-        // 后置相机 + 竖屏: buffer 是横的, 扶正需要顺时针转 90° (.right, 即 EXIF 6)
-        let upright = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        // 扶正: 后置顺时针 90° (.right), 前置逆时针 90° (.left), 都不做镜像
+        let upright = isFrontCamera
+            ? CIImage(cvPixelBuffer: pixelBuffer).oriented(.left)
+            : CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
         let Wo = upright.extent.width
         let Ho = upright.extent.height
         guard Wo > 0, Ho > 0 else { return nil }
