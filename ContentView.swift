@@ -22,149 +22,9 @@ private struct PreviewViewWrapper: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 }
 
-/// 左上角设置菜单 (长按状态条弹出): 镜头 / 分辨率 / FPS / 片门全开 / 推理帧率 / 天线
-private struct SettingsPanel: View {
-    @ObservedObject var camera: CameraManager
-    @State private var fpsSlider: Double = 30
-    @State private var drawSlider: Double = 30
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("镜头").font(.caption2).foregroundColor(.gray)
-            HStack(spacing: 8) {
-                ForEach(camera.availableLenses, id: \.self) { l in
-                    settingButton(l.rawValue, selected: camera.lens == l) {
-                        camera.setLens(l)
-                    }
-                }
-            }
-            Text("分辨率").font(.caption2).foregroundColor(.gray)
-            HStack(spacing: 8) {
-                ForEach(camera.availableResolutions, id: \.self) { r in
-                    settingButton(r.rawValue, selected: camera.videoResolution == r && !camera.openGateEnabled) {
-                        camera.setVideoResolution(r)
-                    }
-                }
-            }
-            .opacity(camera.openGateEnabled ? 0.4 : 1.0)
-            .disabled(camera.openGateEnabled)
-            HStack {
-                Text("FPS").font(.caption2).foregroundColor(.gray)
-                Spacer()
-                Text("\(camera.videoFPS)").font(.caption2).foregroundColor(.white)
-            }
-            Slider(value: $fpsSlider, in: 1...60, step: 1) {
-                Text("FPS")
-            } onEditingChanged: { editing in
-                if !editing {
-                    camera.setVideoFPS(Int(fpsSlider))
-                }
-            }
-            .onAppear { fpsSlider = Double(camera.videoFPS) }
-            .onChange(of: camera.videoFPS) { newValue in
-                fpsSlider = Double(newValue)
-            }
-            HStack {
-                Text("绘制帧速率").font(.caption2).foregroundColor(.gray)
-                Spacer()
-                Text("\(camera.drawFPS)").font(.caption2).foregroundColor(.white)
-            }
-            Slider(value: $drawSlider, in: 1...60, step: 1) {
-                Text("绘制帧速率")
-            } onEditingChanged: { editing in
-                if !editing {
-                    camera.setDrawFPS(Int(drawSlider))
-                }
-            }
-            .onAppear { drawSlider = Double(camera.drawFPS) }
-            .onChange(of: camera.drawFPS) { newValue in
-                drawSlider = Double(newValue)
-            }
-            settingButton(
-                camera.openGateEnabled ? "片门全开：已开启" : "尝试开启片门全开",
-                selected: camera.openGateEnabled
-            ) {
-                camera.setOpenGateEnabled(!camera.openGateEnabled)
-            }
-            Text("推理帧率").font(.caption2).foregroundColor(.gray)
-            HStack(spacing: 8) {
-                ForEach([5, 10, 15, 30], id: \.self) { v in
-                    settingButton("\(v)", selected: Int(camera.fpsLimit) == v) {
-                        camera.setFPSLimit(Double(v))
-                    }
-                }
-            }
-            Text("天线").font(.caption2).foregroundColor(.gray)
-            HStack(spacing: 8) {
-                settingButton("开", selected: camera.antennaEnabled) {
-                    camera.setAntennaEnabled(true)
-                }
-                settingButton("关", selected: !camera.antennaEnabled) {
-                    camera.setAntennaEnabled(false)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.black.opacity(0.72))
-        .cornerRadius(12)
-    }
-
-    private func settingButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(selected ? Color.green : Color.white.opacity(0.15))
-                .foregroundColor(selected ? .black : .white)
-                .cornerRadius(8)
-        }
-    }
-}
-
-/// 右下角变焦二级菜单 (默认收拢, 点开展开)
-private struct ZoomControl: View {
-    @ObservedObject var camera: CameraManager
-    @Binding var expanded: Bool
-
-    var body: some View {
-        VStack(spacing: 8) {
-            if expanded {
-                ForEach([5, 3, 2, 1], id: \.self) { z in
-                    zoomButton("\(z)x") {
-                        camera.setZoom(CGFloat(z))
-                        expanded = false
-                    }
-                }
-            }
-            zoomButton(zoomLabel) {
-                expanded.toggle()
-            }
-        }
-    }
-
-    private var zoomLabel: String {
-        let z = camera.zoomFactor
-        return z == floor(z) ? "\(Int(z))x" : String(format: "%.1fx", z)
-    }
-
-    private func zoomButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption)
-                .frame(width: 52, height: 52)
-                .background(Color.black.opacity(0.55))
-                .foregroundColor(.white)
-                .clipShape(Circle())
-        }
-    }
-}
-
 struct ContentView: View {
     @StateObject private var camera: CameraManager
     private let preview: PreviewUIView
-    @State private var showSettings = false
-    @State private var showZoomMenu = false
 
     init() {
         let pv = PreviewUIView()
@@ -177,30 +37,6 @@ struct ContentView: View {
             ZStack {
                 PreviewViewWrapper(preview: preview)
                     .frame(width: geo.size.width, height: geo.size.height)
-
-                // v9 版本标识 (右上角, 用于确认真机安装版本)
-                Text("v9")
-                    .font(.caption2)
-                    .foregroundColor(.red)
-                    .padding(4)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(4)
-                    .position(x: geo.size.width - 24, y: 24)
-
-                // 天线: 仅对人物, 从屏幕顶部中心连到框顶边中点
-                if camera.antennaEnabled {
-                    ForEach(camera.detections.indices, id: \.self) { i in
-                        let d = camera.detections[i]
-                        if d.label == "person" {
-                            let r = mapBox(d, viewSize: geo.size, aspect: camera.orientedAspect)
-                            Path { path in
-                                path.move(to: CGPoint(x: geo.size.width / 2, y: 0))
-                                path.addLine(to: CGPoint(x: r.midX, y: r.minY))
-                            }
-                            .stroke(Color.yellow, lineWidth: 1.5)
-                        }
-                    }
-                }
 
                 // 检测框: 归一化坐标按 aspect-fill 映射到屏幕
                 ForEach(camera.detections.indices, id: \.self) { i in
@@ -221,77 +57,49 @@ struct ContentView: View {
                     .position(x: r.midX, y: r.midY)
                 }
 
-                // 菜单展开时, 点空白处收起
-                if showSettings || showZoomMenu {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            showSettings = false
-                            showZoomMenu = false
-                        }
-                }
-
-                // 左上: 状态条 (长按弹出设置菜单) + 录制指示
+                // 顶部: 模型切换 (无二级菜单, 直接放最顶上)
+                // iPhone 12 Pro Max (2778x1284) 适配: 避开刘海
                 VStack {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    if camera.isRecording {
-                                        Circle()
-                                            .fill(Color.red)
-                                            .frame(width: 8, height: 8)
-                                    }
-                                    Text("\(Int(camera.fps)) fps")
-                                }
-                                Text("\(camera.detections.count) 个目标")
-                            }
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(Color.black.opacity(0.45))
-                            .cornerRadius(8)
-                            .onLongPressGesture {
-                                showSettings.toggle()
-                            }
-                            if showSettings {
-                                SettingsPanel(camera: camera)
-                            }
+                    HStack(spacing: 16) {
+                        Button(action: { camera.switchModel(.n) }) {
+                            Text("常规精度")
+                                .font(.subheadline)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(camera.modelVariant == .n ? Color.blue : Color.gray.opacity(0.6))
+                                .foregroundColor(.white)
+                                .cornerRadius(20)
                         }
-                        Spacer()
+                        Button(action: { camera.switchModel(.x) }) {
+                            Text("超高精度")
+                                .font(.subheadline)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .background(camera.modelVariant == .x ? Color.blue : Color.gray.opacity(0.6))
+                                .foregroundColor(.white)
+                                .cornerRadius(20)
+                        }
                     }
-                    .padding(.top, 54)
-                    .padding(.horizontal, 12)
-                    Spacer()
-                }
+                    .padding(.top, 54)  // 避开刘海/状态栏
 
-                // 底部: 录像按钮 (中) + 变焦 (右下)
-                VStack {
-                    Spacer()
+                    // 状态
                     HStack {
-                        Spacer()
-                        // 录像按钮
-                        Button(action: { camera.toggleRecording() }) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.black.opacity(0.55))
-                                    .frame(width: 64, height: 64)
-                                if camera.isRecording {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.red)
-                                        .frame(width: 26, height: 26)
-                                } else {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 52, height: 52)
-                                }
-                            }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(Int(camera.fps)) fps")
+                            Text("\(camera.detections.count) 个目标")
+                            Text(camera.status)
+                                .font(.caption2)
                         }
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(8)
+                        .background(Color.black.opacity(0.45))
+                        .cornerRadius(8)
                         Spacer()
-                        ZoomControl(camera: camera, expanded: $showZoomMenu)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 34)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    Spacer()
                 }
             }
         }
