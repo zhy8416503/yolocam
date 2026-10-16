@@ -11,12 +11,11 @@ enum CameraLens: String, CaseIterable {
     case telephoto = "长焦"
 }
 
-/// 录制规格 (片门全开 = OpenGate, 调用整个 CMOS 录 4:3)
-enum RecordingQuality: String, CaseIterable {
-    case p1080 = "1080p30"
-    case k4_30 = "4K30"
-    case k4_60 = "4K60"
-    case openGate = "片门全开"
+/// 分辨率
+enum VideoResolution: String, CaseIterable {
+    case p1080 = "1080p"
+    case p1440 = "1440p"
+    case k4 = "4K"
 }
 
 /// 相机 + 实时检测 + 录像。App 锁定竖屏。
@@ -28,7 +27,10 @@ final class CameraManager: NSObject, ObservableObject {
     // 设置项 (UI 绑定)
     @Published var lens: CameraLens = .wide
     @Published var availableLenses: [CameraLens] = [.wide]
-    @Published var recordingQuality: RecordingQuality = .k4_30
+    @Published var videoResolution: VideoResolution = .p1080
+    @Published var availableResolutions: [VideoResolution] = [.p1080]
+    @Published var videoFPS: Int = 30
+    @Published var openGateEnabled: Bool = false  // 片门全开, 默认关闭
     @Published var isRecording = false
     @Published var antennaEnabled = true
     @Published var fpsLimit: Double = 30
@@ -72,7 +74,7 @@ final class CameraManager: NSObject, ObservableObject {
             let lenses = self.discoverLenses()
             DispatchQueue.main.async { self.availableLenses = lenses }
 
-            guard self.applyLens(.wide, quality: .k4_30) != nil else {
+            guard self.applyLens(.wide, resolution: .p1080, fps: 30, openGate: false) != nil else {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async { self.status = "找不到相机" }
                 return
@@ -125,51 +127,55 @@ final class CameraManager: NSObject, ObservableObject {
         return result.isEmpty ? [.wide] : result
     }
 
-    /// 为指定规格找最合适的设备格式, 返回 (格式, 帧率)
-    private func findFormat(for device: AVCaptureDevice, quality: RecordingQuality) -> (AVCaptureDevice.Format, Int)? {
-        let want43: Bool
-        let minWidth: Int32
-        let wantFPS: Int
-        switch quality {
-        case .p1080:
-            want43 = false; minWidth = 1920; wantFPS = 30
-        case .k4_30:
-            want43 = false; minWidth = 3840; wantFPS = 30
-        case .k4_60:
-            want43 = false; minWidth = 3840; wantFPS = 60
-        case .openGate:
-            want43 = true; minWidth = 3000; wantFPS = 30
-        }
-        var best: (AVCaptureDevice.Format, Int, Int32)?
-        for format in device.formats {
-            let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            let is43 = abs(Double(dims.width) / Double(dims.height) - 4.0 / 3.0) < 0.02
-            if want43 != is43 { continue }
-            if dims.width < minWidth { continue }
-            let maxFPS = format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0
-            if maxFPS < Double(wantFPS) { continue }
-            if want43 {
-                // 片门全开: 取最大的 4:3 (整个 CMOS)
-                if best == nil || dims.width > best!.2 { best = (format, wantFPS, dims.width) }
-            } else {
-                // 普通: 取满足要求的最小分辨率 (避免杀鸡用牛刀)
-                if best == nil || dims.width < best!.2 { best = (format, wantFPS, dims.width) }
+    /// 该设备支持的 16:9 分辨率 (按实际格式探测)
+    private func availableResolutions(for device: AVCaptureDevice) -> [VideoResolution] {
+        let dimsSet = Set(device.formats.map {
+            let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+            return "\(d.width)x\(d.height)"
+        })
+        var result: [VideoResolution] = []
+        if dimsSet.contains("1920x1080") { result.append(.p1080) }
+        if dimsSet.contains("2560x1440") { result.append(.p1440) }
+        if dimsSet.contains("3840x2160") { result.append(.k4) }
+        return result.isEmpty ? [.p1080] : result
+    }
+
+    /// 为指定 (分辨率, 帧率, 片门) 找最合适的设备格式, 返回 (格式, 实际帧率)
+    private func findFormat(for device: AVCaptureDevice, resolution: VideoResolution, fps: Int, openGate: Bool) -> (AVCaptureDevice.Format, Int)? {
+        if openGate {
+            // 片门全开: 取最大的 4:3 (整个 CMOS), 帧率按设备能力钳制
+            var best: (AVCaptureDevice.Format, Int, Int32)?
+            for format in device.formats {
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                let is43 = abs(Double(dims.width) / Double(dims.height) - 4.0 / 3.0) < 0.02
+                if !is43 || dims.width < 3000 { continue }
+                let maxFPS = Int(format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0)
+                if maxFPS < 15 { continue }
+                let actualFPS = min(fps, maxFPS)
+                if best == nil || dims.width > best!.2 { best = (format, actualFPS, dims.width) }
             }
+            return best.map { ($0.0, $0.1) }
+        } else {
+            let targetW: Int32
+            let targetH: Int32
+            switch resolution {
+            case .p1080: targetW = 1920; targetH = 1080
+            case .p1440: targetW = 2560; targetH = 1440
+            case .k4: targetW = 3840; targetH = 2160
+            }
+            for format in device.formats {
+                let dims = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                if dims.width != targetW || dims.height != targetH { continue }
+                let maxFPS = Int(format.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0)
+                if maxFPS < fps { continue }
+                return (format, fps)
+            }
+            return nil
         }
-        return best.map { ($0.0, $0.1) }
     }
 
-    private func fallbackQualities(for quality: RecordingQuality) -> [RecordingQuality] {
-        switch quality {
-        case .k4_60: return [.k4_60, .k4_30, .p1080]
-        case .k4_30: return [.k4_30, .p1080]
-        case .p1080: return [.p1080]
-        case .openGate: return [.openGate, .k4_30, .p1080]
-        }
-    }
-
-    /// 在 session 配置锁内应用镜头+规格 (带降级), 返回实际生效的 (镜头, 规格)
-    private func applyLens(_ newLens: CameraLens, quality: RecordingQuality) -> (CameraLens, RecordingQuality)? {
+    /// 在 session 配置锁内应用镜头+分辨率+帧率+片门 (带降级), 返回实际生效的 (镜头, 分辨率, 帧率, 片门)
+    private func applyLens(_ newLens: CameraLens, resolution: VideoResolution, fps: Int, openGate: Bool) -> (CameraLens, VideoResolution, Int, Bool)? {
         var targetLens = newLens
         var targetDevice = device(for: targetLens)
         if targetDevice == nil {
@@ -177,77 +183,135 @@ final class CameraManager: NSObject, ObservableObject {
             targetDevice = device(for: .wide)
         }
         guard let dev = targetDevice else { return nil }
-        var appliedQuality: RecordingQuality?
-        for q in fallbackQualities(for: quality) {
-            if let (format, fps) = findFormat(for: dev, quality: q) {
-                do {
-                    try dev.lockForConfiguration()
-                    dev.activeFormat = format
-                    let duration = CMTimeMake(value: 1, timescale: Int32(fps))
-                    dev.activeVideoMinFrameDuration = duration
-                    dev.activeVideoMaxFrameDuration = duration
-                    dev.videoZoomFactor = 1.0
-                    dev.unlockForConfiguration()
-                    appliedQuality = q
-                    break
-                } catch { continue }
+        // 分辨率降级链: 4K -> 1440p -> 1080p
+        let resChain: [VideoResolution]
+        switch resolution {
+        case .k4: resChain = [.k4, .p1440, .p1080]
+        case .p1440: resChain = [.p1440, .p1080]
+        case .p1080: resChain = [.p1080]
+        }
+        var applied: (VideoResolution, AVCaptureDevice.Format, Int)?
+        for r in resChain {
+            if let (format, actualFPS) = findFormat(for: dev, resolution: r, fps: fps, openGate: openGate) {
+                applied = (r, format, actualFPS)
+                break
             }
         }
-        guard let aq = appliedQuality,
-              let input = try? AVCaptureDeviceInput(device: dev),
+        // 片门全开找不到 4:3 时, 自动回落到普通 16:9
+        var appliedGate = openGate
+        if applied == nil && openGate {
+            appliedGate = false
+            for r in resChain {
+                if let (format, actualFPS) = findFormat(for: dev, resolution: r, fps: fps, openGate: false) {
+                    applied = (r, format, actualFPS)
+                    break
+                }
+            }
+        }
+        guard let (res, format, actualFPS) = applied else { return nil }
+        do {
+            try dev.lockForConfiguration()
+            dev.activeFormat = format
+            let duration = CMTimeMake(value: 1, timescale: Int32(actualFPS))
+            dev.activeVideoMinFrameDuration = duration
+            dev.activeVideoMaxFrameDuration = duration
+            dev.videoZoomFactor = 1.0
+            dev.unlockForConfiguration()
+        } catch { return nil }
+        guard let input = try? AVCaptureDeviceInput(device: dev),
               session.canAddInput(input) else { return nil }
         session.addInput(input)
         videoInput = input
         currentDevice = dev
         detector?.isFrontCamera = (targetLens == .front)
-        return (targetLens, aq)
+        // 更新该镜头支持的分辨率列表
+        let avail = availableResolutions(for: dev)
+        DispatchQueue.main.async {
+            self.availableResolutions = avail
+        }
+        return (targetLens, res, actualFPS, appliedGate)
     }
 
     /// 切换镜头
     func setLens(_ newLens: CameraLens) {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            // 取当前规格 (从主线程的已发布值读, 仅用于发起请求)
-            var currentQuality = RecordingQuality.k4_30
-            DispatchQueue.main.sync { currentQuality = self.recordingQuality }
+            var res = VideoResolution.p1080
+            var fps = 30
+            var gate = false
+            DispatchQueue.main.sync {
+                res = self.videoResolution
+                fps = self.videoFPS
+                gate = self.openGateEnabled
+            }
             self.session.beginConfiguration()
             if let old = self.videoInput {
                 self.session.removeInput(old)
                 self.videoInput = nil
             }
-            guard let (appliedLens, appliedQuality) = self.applyLens(newLens, quality: currentQuality) else {
+            guard let (appliedLens, appliedRes, appliedFPS, appliedGate) = self.applyLens(newLens, resolution: res, fps: fps, openGate: gate) else {
                 self.session.commitConfiguration()
                 return
             }
             self.session.commitConfiguration()
             DispatchQueue.main.async {
                 self.lens = appliedLens
-                self.recordingQuality = appliedQuality
+                self.videoResolution = appliedRes
+                self.videoFPS = appliedFPS
+                self.openGateEnabled = appliedGate
                 self.zoomFactor = 1.0
                 self.configurePreviewConnection()
             }
         }
     }
 
-    /// 切换录制规格
-    func setRecordingQuality(_ quality: RecordingQuality) {
+    /// 切换分辨率
+    func setVideoResolution(_ resolution: VideoResolution) {
+        applyVideoSettings(resolution: resolution, fps: nil, openGate: nil)
+    }
+
+    /// 切换帧率 (1-60)
+    func setVideoFPS(_ fps: Int) {
+        applyVideoSettings(resolution: nil, fps: fps, openGate: nil)
+    }
+
+    /// 片门全开开关
+    func setOpenGateEnabled(_ enabled: Bool) {
+        applyVideoSettings(resolution: nil, fps: nil, openGate: enabled)
+    }
+
+    /// 统一应用视频设置 (nil 表示保持当前值)
+    private func applyVideoSettings(resolution: VideoResolution?, fps: Int?, openGate: Bool?) {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            var currentLens = CameraLens.wide
-            DispatchQueue.main.sync { currentLens = self.lens }
+            var curLens = CameraLens.wide
+            var curRes = VideoResolution.p1080
+            var curFPS = 30
+            var curGate = false
+            DispatchQueue.main.sync {
+                curLens = self.lens
+                curRes = self.videoResolution
+                curFPS = self.videoFPS
+                curGate = self.openGateEnabled
+            }
+            let newRes = resolution ?? curRes
+            let newFPS = fps ?? curFPS
+            let newGate = openGate ?? curGate
             self.session.beginConfiguration()
             if let old = self.videoInput {
                 self.session.removeInput(old)
                 self.videoInput = nil
             }
-            guard let (appliedLens, appliedQuality) = self.applyLens(currentLens, quality: quality) else {
+            guard let (appliedLens, appliedRes, appliedFPS, appliedGate) = self.applyLens(curLens, resolution: newRes, fps: newFPS, openGate: newGate) else {
                 self.session.commitConfiguration()
                 return
             }
             self.session.commitConfiguration()
             DispatchQueue.main.async {
                 self.lens = appliedLens
-                self.recordingQuality = appliedQuality
+                self.videoResolution = appliedRes
+                self.videoFPS = appliedFPS
+                self.openGateEnabled = appliedGate
                 self.zoomFactor = 1.0
                 self.configurePreviewConnection()
             }

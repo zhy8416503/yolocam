@@ -22,9 +22,10 @@ private struct PreviewViewWrapper: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 }
 
-/// 左上角设置菜单 (长按状态条弹出): 镜头 / 录制规格 / 推理帧率 / 天线
+/// 左上角设置菜单 (长按状态条弹出): 镜头 / 分辨率 / FPS / 片门全开 / 推理帧率 / 天线
 private struct SettingsPanel: View {
     @ObservedObject var camera: CameraManager
+    @State private var fpsSlider: Double = 30
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -36,13 +37,37 @@ private struct SettingsPanel: View {
                     }
                 }
             }
-            Text("录制规格").font(.caption2).foregroundColor(.gray)
+            Text("分辨率").font(.caption2).foregroundColor(.gray)
             HStack(spacing: 8) {
-                ForEach(RecordingQuality.allCases, id: \.self) { q in
-                    settingButton(q.rawValue, selected: camera.recordingQuality == q) {
-                        camera.setRecordingQuality(q)
+                ForEach(camera.availableResolutions, id: \.self) { r in
+                    settingButton(r.rawValue, selected: camera.videoResolution == r && !camera.openGateEnabled) {
+                        camera.setVideoResolution(r)
                     }
                 }
+            }
+            .opacity(camera.openGateEnabled ? 0.4 : 1.0)
+            .disabled(camera.openGateEnabled)
+            HStack {
+                Text("FPS").font(.caption2).foregroundColor(.gray)
+                Spacer()
+                Text("\(camera.videoFPS)").font(.caption2).foregroundColor(.white)
+            }
+            Slider(value: $fpsSlider, in: 1...60, step: 1) {
+                Text("FPS")
+            } onEditingChanged: { editing in
+                if !editing {
+                    camera.setVideoFPS(Int(fpsSlider))
+                }
+            }
+            .onAppear { fpsSlider = Double(camera.videoFPS) }
+            .onChange(of: camera.videoFPS) { newValue in
+                fpsSlider = Double(newValue)
+            }
+            settingButton(
+                camera.openGateEnabled ? "片门全开：已开启" : "尝试开启片门全开",
+                selected: camera.openGateEnabled
+            ) {
+                camera.setOpenGateEnabled(!camera.openGateEnabled)
             }
             Text("推理帧率").font(.caption2).foregroundColor(.gray)
             HStack(spacing: 8) {
