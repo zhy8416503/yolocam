@@ -19,18 +19,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 转换模型 (YOLO26n/x -> CoreML)
+      - name: 转换模型 (YOLO26n -> CoreML via ONNX)
         run: |
-          pip install ultralytics
+          pip install ultralytics onnx
           python -c "from ultralytics import YOLO"  # 触发 AutoUpdate
-          pip install "coremltools==8.1"  # 降级 (ultralytics 会升到9.0, 需覆盖)
+          pip install "coremltools==8.1"  # 8.1 仍支持 ONNX, 9.0 已移除
           python3 << 'PYEOF'
           from ultralytics import YOLO
-          print('导出 yolo26n...')
+          import coremltools as ct
+          print('导出 yolo26n -> ONNX...')
           model = YOLO('yolo26n.pt')
-          out = model.export(format='coreml', imgsz=640)
-          print(f'yolo26n -> {out}')
-          print('模型转换完成')
+          onnx_path = model.export(format='onnx', imgsz=640)
+          print(f'ONNX: {onnx_path}')
+          print('ONNX -> CoreML...')
+          mlmodel = ct.converters.onnx.convert(
+              model=onnx_path,
+              minimum_deployment_target=ct.target.iOS16
+          )
+          mlmodel.save('yolo26n.mlpackage')
+          print('yolo26n.mlpackage 完成')
           PYEOF
           ls -d *.mlpackage
 
