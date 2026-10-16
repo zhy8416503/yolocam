@@ -22,7 +22,7 @@ private struct PreviewViewWrapper: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
 }
 
-/// 左上角设置菜单 (长按状态条弹出): 镜头 / 推理帧率 / 分辨率
+/// 左上角设置菜单 (长按状态条弹出): 镜头 / 录制规格 / 推理帧率 / 天线
 private struct SettingsPanel: View {
     @ObservedObject var camera: CameraManager
 
@@ -30,11 +30,18 @@ private struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("镜头").font(.caption2).foregroundColor(.gray)
             HStack(spacing: 8) {
-                settingButton("后置", selected: camera.cameraPosition == .back) {
-                    camera.switchCamera(to: .back)
+                ForEach(camera.availableLenses, id: \.self) { l in
+                    settingButton(l.rawValue, selected: camera.lens == l) {
+                        camera.setLens(l)
+                    }
                 }
-                settingButton("前置", selected: camera.cameraPosition == .front) {
-                    camera.switchCamera(to: .front)
+            }
+            Text("录制规格").font(.caption2).foregroundColor(.gray)
+            HStack(spacing: 8) {
+                ForEach(RecordingQuality.allCases, id: \.self) { q in
+                    settingButton(q.rawValue, selected: camera.recordingQuality == q) {
+                        camera.setRecordingQuality(q)
+                    }
                 }
             }
             Text("推理帧率").font(.caption2).foregroundColor(.gray)
@@ -45,16 +52,13 @@ private struct SettingsPanel: View {
                     }
                 }
             }
-            Text("分辨率").font(.caption2).foregroundColor(.gray)
+            Text("天线").font(.caption2).foregroundColor(.gray)
             HStack(spacing: 8) {
-                settingButton("流畅", selected: camera.resolutionPreset == .hd1280x720) {
-                    camera.setResolution(.hd1280x720)
+                settingButton("开", selected: camera.antennaEnabled) {
+                    camera.setAntennaEnabled(true)
                 }
-                settingButton("高清", selected: camera.resolutionPreset == .hd1920x1080) {
-                    camera.setResolution(.hd1920x1080)
-                }
-                settingButton("超清", selected: camera.resolutionPreset == .hd4K3840x2160) {
-                    camera.setResolution(.hd4K3840x2160)
+                settingButton("关", selected: !camera.antennaEnabled) {
+                    camera.setAntennaEnabled(false)
                 }
             }
         }
@@ -132,6 +136,21 @@ struct ContentView: View {
                 PreviewViewWrapper(preview: preview)
                     .frame(width: geo.size.width, height: geo.size.height)
 
+                // 天线: 仅对人物, 从屏幕顶部中心连到框顶边中点
+                if camera.antennaEnabled {
+                    ForEach(camera.detections.indices, id: \.self) { i in
+                        let d = camera.detections[i]
+                        if d.label == "person" {
+                            let r = mapBox(d, viewSize: geo.size, aspect: camera.orientedAspect)
+                            Path { path in
+                                path.move(to: CGPoint(x: geo.size.width / 2, y: 0))
+                                path.addLine(to: CGPoint(x: r.midX, y: r.minY))
+                            }
+                            .stroke(Color.yellow, lineWidth: 1.5)
+                        }
+                    }
+                }
+
                 // 检测框: 归一化坐标按 aspect-fill 映射到屏幕
                 ForEach(camera.detections.indices, id: \.self) { i in
                     let d = camera.detections[i]
@@ -161,12 +180,19 @@ struct ContentView: View {
                         }
                 }
 
-                // 左上: 状态条 (长按弹出设置菜单)
+                // 左上: 状态条 (长按弹出设置菜单) + 录制指示
                 VStack {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(Int(camera.fps)) fps")
+                                HStack(spacing: 6) {
+                                    if camera.isRecording {
+                                        Circle()
+                                            .fill(Color.red)
+                                            .frame(width: 8, height: 8)
+                                    }
+                                    Text("\(Int(camera.fps)) fps")
+                                }
                                 Text("\(camera.detections.count) 个目标")
                             }
                             .font(.caption)
@@ -188,14 +214,32 @@ struct ContentView: View {
                     Spacer()
                 }
 
-                // 右下: 变焦二级菜单
+                // 底部: 录像按钮 (中) + 变焦 (右下)
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
+                        // 录像按钮
+                        Button(action: { camera.toggleRecording() }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.55))
+                                    .frame(width: 64, height: 64)
+                                if camera.isRecording {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.red)
+                                        .frame(width: 26, height: 26)
+                                } else {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 52, height: 52)
+                                }
+                            }
+                        }
+                        Spacer()
                         ZoomControl(camera: camera, expanded: $showZoomMenu)
                     }
-                    .padding(.trailing, 18)
+                    .padding(.horizontal, 18)
                     .padding(.bottom, 34)
                 }
             }
