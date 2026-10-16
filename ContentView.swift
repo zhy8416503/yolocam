@@ -26,6 +26,7 @@ private struct PreviewViewWrapper: UIViewRepresentable {
 private struct SettingsPanel: View {
     @ObservedObject var camera: CameraManager
     @State private var fpsSlider: Double = 30
+    @State private var drawSlider: Double = 30
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -62,6 +63,22 @@ private struct SettingsPanel: View {
             .onAppear { fpsSlider = Double(camera.videoFPS) }
             .onChange(of: camera.videoFPS) { newValue in
                 fpsSlider = Double(newValue)
+            }
+            HStack {
+                Text("绘制帧速率").font(.caption2).foregroundColor(.gray)
+                Spacer()
+                Text("\(camera.drawFPS)").font(.caption2).foregroundColor(.white)
+            }
+            Slider(value: $drawSlider, in: 1...60, step: 1) {
+                Text("绘制帧速率")
+            } onEditingChanged: { editing in
+                if !editing {
+                    camera.setDrawFPS(Int(drawSlider))
+                }
+            }
+            .onAppear { drawSlider = Double(camera.drawFPS) }
+            .onChange(of: camera.drawFPS) { newValue in
+                drawSlider = Double(newValue)
             }
             settingButton(
                 camera.openGateEnabled ? "片门全开：已开启" : "尝试开启片门全开",
