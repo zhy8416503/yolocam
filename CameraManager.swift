@@ -219,7 +219,7 @@ final class CameraManager: NSObject, ObservableObject {
         let actual = max(minFPS, min(targetFPS, maxFPS))
         // 若已是目标值则跳过, 减少锁操作
         let cur = device.activeVideoMinFrameDuration
-        if cur.value > 0 && Int(cur.timescale / cur.value) == actual { return actual }
+        if cur.value > 0 && Int(Int64(cur.timescale) / cur.value) == actual { return actual }
         guard (try? device.lockForConfiguration()) != nil else { return actual }
         device.activeVideoMinFrameDuration = CMTimeMake(value: 1, timescale: Int32(actual))
         device.activeVideoMaxFrameDuration = CMTimeMake(value: 1, timescale: Int32(actual))
