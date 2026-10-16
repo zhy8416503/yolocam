@@ -32,7 +32,7 @@ jobs:
           onnx_path = model.export(format='onnx', imgsz=640)
           print(f'ONNX: {onnx_path}')
           print('ONNX -> CoreML...')
-          mlmodel = ct.converters.onnx.convert(
+          mlmodel = ct.convert(
               model=onnx_path,
               minimum_deployment_target=ct.target.iOS16
           )
