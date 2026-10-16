@@ -22,18 +22,16 @@ jobs:
       - name: 转换模型 (YOLO26n/x -> CoreML)
         run: |
           pip install ultralytics coremltools
-          python3 << 'EOF'
+          python3 << 'PYEOF'
           from ultralytics import YOLO
-          import os
           for name in ['yolo26n', 'yolo26x']:
               print(f'导出 {name}...')
-              model = YOLO(f'{name}.pt')  # 自动下载
+              model = YOLO(f'{name}.pt')
               out = model.export(format='coreml', imgsz=640)
               print(f'{name} -> {out}')
-              # out 是 yolo26n.mlpackage 目录, 已在当前目录
           print('模型转换完成')
+          PYEOF
           ls -d *.mlpackage
-          EOF
 
       - name: Xcode 构建 (不签名)
         run: |
