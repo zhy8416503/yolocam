@@ -25,7 +25,7 @@ final class CameraManager: NSObject, ObservableObject {
         self.previewLayer = previewLayer
         super.init()
         do {
-            self.detector = try Detector(variant: .n)
+            self.detector = try Detector()
         } catch {
             DispatchQueue.main.async { self.status = "模型加载失败" }
         }

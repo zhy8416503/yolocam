@@ -23,7 +23,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>YOLOCam 需要使用相机进行实时物体检测（YOLOv8 模型，完全在手机上离线运行）</string>
+	<string>YOLOCam 需要使用相机进行实时物体检测（YOLO26-N 模型，完全在手机上离线运行）</string>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>1</integer>

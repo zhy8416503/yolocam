@@ -1,4 +1,4 @@
-// Standard COCO 80-class labels, same order as YOLOv8 outputs.
+// Standard COCO 80-class labels, same order as YOLO detection outputs.
 let cocoLabels: [String] = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
     "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
